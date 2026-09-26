@@ -1,0 +1,124 @@
+cargo-features = ["profile-rustflags"]
+
+[package]
+edition      = "2024"
+name         = "custard-cream-display"
+rust-version = "1.95"
+version      = "0.1.0"
+description  = "A touch-screen picture frame for pictures on a custard cream server"
+
+[[bin]]
+name = "custard-cream-display"
+path = "./src/bin/main.rs"
+
+[dependencies]
+esp-hal = { version = "~1.2.2", features = ["esp32s3", "log-04", "unstable"] }
+
+esp-rtos = { version = "0.4.0", features = [
+  "embassy",
+  "esp-alloc",
+  "esp-radio",
+  "esp32s3",
+  "log-04",
+] }
+
+esp-bootloader-esp-idf = { version = "0.6.0", features = ["esp32s3", "log-04"] }
+log                    = "0.4.27"
+
+embassy-net = { version = "0.9.1", features = [
+  "dhcpv4",
+  "dns",
+  "log",
+  "medium-ethernet",
+  "proto-ipv4",
+  "tcp",
+] }
+embedded-io-async = "0.7.0"
+# No "global-allocator": src/heap.rs provides one that keeps small
+# allocations out of PSRAM. "compat" provides malloc() for the Wi-Fi driver.
+esp-alloc = { version = "0.11.0", default-features = false, features = ["compat", "esp32s3"] }
+esp-backtrace = { version = "0.20.0", features = [
+  "esp32s3",
+  "panic-handler",
+  "println",
+] }
+# UART only: the default "auto" mode switches to the native USB port whenever
+# it sees USB start-of-frame activity. No "critical-section": it turns
+# interrupts off for the whole of each line (about 10 ms for a long one at
+# 115200 baud), which starves the display's refill interrupt and makes the
+# panel lose sync. Everything runs on one core, so the lock isn't needed.
+esp-println = { version = "0.18.0", default-features = false, features = [
+  "colors",
+  "esp32s3",
+  "log-04",
+  "uart",
+] }
+embassy-executor = { version = "0.10.0", features = ["log"] }
+embassy-sync     = "0.8.0"
+embassy-time     = { version = "0.5.0", features = ["log"] }
+esp-radio = { version = "1.0.0-beta.1", features = [
+  "esp-alloc",
+  "esp32s3",
+  "log-04",
+  "unstable",
+  "wifi",
+] }
+
+critical-section = "1.2.0"
+# esp-rtos threads (the picture decoder runs in one).
+esp-radio-rtos-driver = "0.4.2"
+embassy-futures  = "0.1.2"
+embedded-hal     = "1.0.0"
+static_cell      = "2.1.1"
+
+# Picture decoding and the server's JSON replies.
+serde      = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+zune-jpeg  = { version = "0.5.15", default-features = false }
+zune-core  = { version = "0.5.3", default-features = false }
+
+slint = { version = "1.18.1", default-features = false, features = [
+  "compat-1-2",
+  "libm",
+  "renderer-software",
+  "unsafe-single-threaded",
+] }
+
+[patch.crates-io]
+# Slint 1.18.1 uses f32::rem_euclid (std-only) in its path code; see
+# patches/i-slint-core/graphics/path.rs.
+i-slint-core = { path = "patches/i-slint-core" }
+# esp-radio 1.0.0-beta.1 can leak its count of Wi-Fi frames in flight, after
+# which it never sends again; see "custard-cream-display patch" in
+# patches/esp-radio/src/wifi/mod.rs.
+esp-radio = { path = "patches/esp-radio" }
+
+[build-dependencies]
+fontdue     = "0.9"
+serde       = { version = "1.0", features = ["derive"] }
+slint-build = "1.18.1"
+toml        = "1.1"
+
+[profile.dev]
+# The default debug profile is too slow and too big for the device.
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1
+debug         = 2
+opt-level     = 's'
+# No LTO: this crate is compiled without the FPU (below), and LTO would
+# codegen everything together with one set of target features.
+lto           = false
+
+# The Xtensa LLVM backend crashes ("Cannot select: XtensaISD::PCREL_WRAPPER")
+# on Slint's generated code when `cond ? <float const> : <float const>` becomes
+# a constant-pool load, which only happens when f32 is a hardware type. The
+# generated code lives in this crate, so this crate is built with soft-float.
+# Keep pixel code here in integer arithmetic; dependencies (such as the JPEG
+# decoder) still use the FPU.
+[profile.release.package.custard-cream-display]
+rustflags = ["-C", "target-feature=-fp"]
+
+[profile.dev.package.custard-cream-display]
+rustflags = ["-C", "target-feature=-fp"]

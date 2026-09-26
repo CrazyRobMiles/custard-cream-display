@@ -1,0 +1,20 @@
+# Keep compilation settings in this file and user/runtime settings in `esp-config.toml`.
+include = ["esp-config.toml"]
+
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash flash --monitor --chip esp32s3"
+
+[env]
+# The Xtensa rustc runs under x64 emulation on this Windows-on-ARM machine and
+# overflows its default stack compiling `core`; give it more.
+RUST_MIN_STACK = "268435456"
+
+[build]
+rustflags = [
+  "-C", "link-arg=-nostartfiles",
+]
+
+target = "xtensa-esp32s3-none-elf"
+
+[unstable]
+build-std = ["alloc", "core"]

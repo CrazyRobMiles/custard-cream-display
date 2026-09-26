@@ -1,0 +1,85 @@
+# Settings for custard-cream-display.
+#
+# The build script (build.rs) reads this file when the firmware is compiled,
+# checks it, and turns it into constants. Change it and rebuild to apply.
+# Anything that isn't secret lives here. Wi-Fi credentials go in
+# `secrets.toml` (see secrets.example.toml).
+
+[server]
+# Base address of the custard cream server. Only plain http:// is supported;
+# the public server answers on http as well as https.
+url = "http://custardcream.cam/"
+
+[display]
+# The display hardware. Supported types:
+#
+#   "waveshare-esp32-s3-touch-lcd-7"
+#       Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel, GT911 touch and a
+#       CH422G I/O expander. Its panel timings are the defaults below.
+type = "waveshare-esp32-s3-touch-lcd-7"
+
+# Size of the panel in pixels, as the hardware scans it out (landscape for
+# the Waveshare board). The defaults for the type are used if these are
+# left out. The height must be a multiple of 2.
+width = 800
+height = 480
+
+# How the frame hangs on the wall, in degrees clockwise: 0, 90, 180 or 270.
+# 90 and 270 give a portrait frame. Pictures, the menu and touch input are
+# all rotated to match.
+rotation = 0
+
+# Panel timings. Leave this section out to use the defaults for `type`;
+# set any of them to override the default.
+# [display.timing]
+# pixel_clock_hz = 16_000_000
+# hsync_pulse = 4
+# hsync_back_porch = 8
+# hsync_front_porch = 8
+# vsync_pulse = 4
+# vsync_back_porch = 8
+# vsync_front_porch = 8
+
+[touch]
+# Adjust these if taps land in the wrong place, for instance on a panel whose
+# touch controller is mounted differently. They apply before `rotation`.
+swap_xy = false
+invert_x = false
+invert_y = false
+
+[slideshow]
+# How long each picture stays on screen, in seconds (minimum 3).
+seconds_per_picture = 20
+
+# How one picture replaces the next:
+#   "crossfade"  fade from one picture into the next
+#   "cut"        switch straight to the next picture
+transition = "crossfade"
+
+# Length of the crossfade in milliseconds. The panel has 16-bit colour, so a
+# fade has at most 32 distinct steps, and each step means redrawing the whole
+# screen from PSRAM (about 125 ms per step on the 800x480 panel), so a short
+# fade shows only a few steps. Fades of 1500 to 3000 ms look smoothest.
+fade_milliseconds = 1500
+
+# How a picture is fitted to the screen:
+#   "fit"   show the whole picture, with borders where the shapes differ
+#   "fill"  fill the whole screen, cropping the edges of the picture
+scale = "fit"
+
+# Border colour for "fit", as "#rrggbb".
+background = "#000000"
+
+# Soften the colour banding of the 16-bit panel with ordered dithering.
+dither = true
+
+# Tags to show when the frame starts. An empty list shows every picture.
+# Tags can be changed on the frame by tapping the screen.
+tags = []
+
+# The tag menu closes by itself after this many seconds without a touch.
+menu_timeout_seconds = 60
+
+# Write each picture's three-word phrase in the bottom-left corner. This is
+# the setting at start-up; "Show picture names" in the menu changes it.
+show_phrase = false

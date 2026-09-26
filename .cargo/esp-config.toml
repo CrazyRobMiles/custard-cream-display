@@ -1,0 +1,6 @@
+# Keep user/runtime configuration values in this file.
+[env]
+ESP_LOG="info"
+# 64-byte cache lines give more PSRAM throughput, which the RGB panel's
+# framebuffer DMA needs (Espressif recommends this for RGB LCDs).
+ESP_HAL_CONFIG_DATA_CACHE_LINE_SIZE="64B"

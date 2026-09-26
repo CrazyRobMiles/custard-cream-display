@@ -1,0 +1,290 @@
+// The frame's own screens. Pictures are drawn straight into the framebuffer
+// by Rust; Slint only draws while one of these is showing:
+//
+// - the status page, until the first picture arrives;
+// - the tag menu, opened by tapping the screen, which also chooses whether
+//   each picture's phrase is written on it.
+//
+// The window takes the logical (rotated) screen size set by the platform
+// code, so everything is laid out relative to the window size.
+
+import "./fonts/Montserrat-Regular.ttf";
+import "./fonts/Montserrat-SemiBold.ttf";
+
+global Theme {
+    out property <color> background: #15171A;
+    out property <color> card: #24282D;
+    out property <color> card-pressed: #33383F;
+    out property <color> border: #3A4048;
+    out property <color> accent: #E0A93B;       // custard
+    out property <color> accent-text: #1C1406;
+    out property <color> text: #F2EEE6;
+    out property <color> muted: #9AA0A8;
+
+    out property <length> pad: 24px;
+    out property <length> gap: 12px;
+    out property <length> radius: 14px;
+}
+
+export struct TagChoice {
+    name: string,
+    selected: bool,
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    border-radius: Theme.radius;
+    border-width: 2px;
+    border-color: root.selected ? Theme.accent : Theme.border;
+    background: root.selected ? Theme.accent : (touch.pressed ? Theme.card-pressed : Theme.card);
+
+    Text {
+        x: 14px;
+        width: parent.width - 28px;
+        text: root.text;
+        font-size: 20px;
+        font-weight: root.selected ? 600 : 400;
+        color: root.selected ? Theme.accent-text : Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component StatusPage inherits Rectangle {
+    in property <string> wifi;
+    in property <string> status;
+    callback open-menu;
+
+    background: Theme.background;
+
+    VerticalLayout {
+        alignment: center;
+        padding: Theme.pad;
+        spacing: 16px;
+
+        Text {
+            text: "Custard Cream";
+            font-size: 44px;
+            font-weight: 600;
+            color: Theme.accent;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.status != "" ? root.status : "Waiting for the first picture...";
+            font-size: 22px;
+            color: Theme.text;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: root.wifi;
+            font-size: 18px;
+            color: Theme.muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: "Tap the screen to choose which pictures to show";
+            font-size: 16px;
+            color: Theme.muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.open-menu();
+        }
+    }
+}
+
+component TagMenu inherits Rectangle {
+    in property <[TagChoice]> tags;
+    in property <bool> tags-loaded;
+    in property <bool> all-selected;
+    in property <string> wifi;
+    in property <string> status;
+    in-out property <bool> show-phrase;
+    callback toggle-tag(int);
+    callback show-all();
+    callback done();
+
+    property <length> header: 88px;
+    property <length> footer: 44px;
+    property <length> chip-height: 60px;
+    property <int> columns: max(1, floor((root.width - 2 * Theme.pad + Theme.gap) / 250px));
+    property <length> chip-width: (root.width - 2 * Theme.pad - (root.columns - 1) * Theme.gap) / root.columns;
+    // Rows taken by "All pictures" and the tags (or the loading message).
+    property <int> tag-rows: floor((root.tags.length + root.columns) / root.columns) + (root.tags-loaded ? 0 : 1);
+    property <length> row-step: root.chip-height + Theme.gap;
+
+    background: Theme.background;
+
+    // Header: title and Done.
+    Text {
+        x: Theme.pad;
+        y: 0;
+        height: root.header;
+        width: root.width - 2 * Theme.pad - 160px;
+        text: "Which pictures?";
+        font-size: 30px;
+        font-weight: 600;
+        color: Theme.text;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Rectangle {
+        x: root.width - Theme.pad - 140px;
+        y: (root.header - 56px) / 2;
+        width: 140px;
+        height: 56px;
+        border-radius: Theme.radius;
+        background: done-touch.pressed ? Theme.text : Theme.accent;
+
+        Text {
+            text: "Done";
+            font-size: 22px;
+            font-weight: 600;
+            color: Theme.accent-text;
+        }
+
+        done-touch := TouchArea {
+            clicked => {
+                root.done();
+            }
+        }
+    }
+
+    // Tag chips, "All pictures" first. Scrolls if there are many tags.
+    Flickable {
+        x: 0;
+        y: root.header;
+        width: root.width;
+        height: root.height - root.header - root.footer;
+        content-height: (root.tag-rows + 1) * root.row-step + Theme.gap;
+
+        Chip {
+            x: Theme.pad;
+            y: 0;
+            width: root.chip-width;
+            height: root.chip-height;
+            text: "All pictures";
+            selected: root.all-selected;
+            clicked => {
+                root.show-all();
+            }
+        }
+
+        for tag[i] in root.tags: Chip {
+            x: Theme.pad + Math.mod(i + 1, root.columns) * (root.chip-width + Theme.gap);
+            y: floor((i + 1) / root.columns) * (root.chip-height + Theme.gap);
+            width: root.chip-width;
+            height: root.chip-height;
+            text: tag.name;
+            selected: tag.selected;
+            clicked => {
+                root.toggle-tag(i);
+            }
+        }
+
+        if !root.tags-loaded: Text {
+            x: Theme.pad;
+            y: root.chip-height + Theme.gap;
+            width: root.width - 2 * Theme.pad;
+            height: root.chip-height;
+            text: "Loading the tag list from the server...";
+            font-size: 18px;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+
+        // Options, below the tags.
+        Chip {
+            x: Theme.pad;
+            y: root.tag-rows * root.row-step + Theme.gap;
+            width: root.chip-width;
+            height: root.chip-height;
+            text: "Show picture names";
+            selected: root.show-phrase;
+            clicked => {
+                root.show-phrase = !root.show-phrase;
+            }
+        }
+    }
+
+    // Footer: connection and fetcher status.
+    Text {
+        x: Theme.pad;
+        y: root.height - root.footer;
+        width: root.width - 2 * Theme.pad;
+        height: root.footer;
+        text: root.status != "" ? root.wifi + "  ·  " + root.status : root.wifi;
+        font-size: 15px;
+        color: Theme.muted;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component AppWindow inherits Window {
+    background: Theme.background;
+    default-font-family: "Montserrat";
+
+    in property <bool> menu-open;
+    in property <[TagChoice]> tags;
+    in property <bool> tags-loaded;
+    in property <bool> all-selected: true;
+    in property <string> wifi;
+    in property <string> status;
+    in-out property <bool> show-phrase;
+
+    callback open-menu();
+    callback toggle-tag(int);
+    callback show-all();
+    callback done();
+
+    if !root.menu-open: StatusPage {
+        width: root.width;
+        height: root.height;
+        wifi: root.wifi;
+        status: root.status;
+        open-menu => {
+            root.open-menu();
+        }
+    }
+
+    if root.menu-open: TagMenu {
+        width: root.width;
+        height: root.height;
+        tags: root.tags;
+        tags-loaded: root.tags-loaded;
+        all-selected: root.all-selected;
+        wifi: root.wifi;
+        status: root.status;
+        show-phrase <=> root.show-phrase;
+        toggle-tag(i) => {
+            root.toggle-tag(i);
+        }
+        show-all => {
+            root.show-all();
+        }
+        done => {
+            root.done();
+        }
+    }
+}
