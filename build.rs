@@ -65,6 +65,8 @@ struct Settings {
     touch: Touch,
     #[serde(default)]
     slideshow: Slideshow,
+    #[serde(default)]
+    clock: Clock,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +137,28 @@ impl Default for Slideshow {
             tags: Vec::new(),
             menu_timeout_seconds: 60,
             show_phrase: false,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct Clock {
+    show: bool,
+    format: String,
+    utc_offset_minutes: i32,
+    daylight_saving: String,
+    ntp_server: String,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self {
+            show: false,
+            format: "24-hour".into(),
+            utc_offset_minutes: 0,
+            daylight_saving: "none".into(),
+            ntp_server: "pool.ntp.org".into(),
         }
     }
 }
@@ -353,6 +377,44 @@ fn generate(settings: &Settings, secrets: &Secrets) -> Result<String, String> {
     writeln!(out, "    pub const TAGS: &[&str] = &{:?};", show.tags).unwrap();
     writeln!(out, "    pub const MENU_TIMEOUT_SECONDS: u64 = {};", show.menu_timeout_seconds).unwrap();
     writeln!(out, "    pub const SHOW_PHRASE: bool = {};", show.show_phrase).unwrap();
+    writeln!(out, "}}").unwrap();
+
+    // Clock
+    let clock = &settings.clock;
+    let format = match clock.format.as_str() {
+        "24-hour" => "TwentyFourHour",
+        "12-hour" => "TwelveHour",
+        other => {
+            return Err(format!("{SETTINGS_FILE}: [clock] format must be \"24-hour\" or \"12-hour\", not {other:?}"));
+        }
+    };
+    if !(-12 * 60..=14 * 60).contains(&clock.utc_offset_minutes) {
+        return Err(format!(
+            "{SETTINGS_FILE}: [clock] utc_offset_minutes must be between -720 and 840 (UTC-12:00 to UTC+14:00)"
+        ));
+    }
+    let daylight_saving = match clock.daylight_saving.as_str() {
+        "none" => "None",
+        "europe" => "Europe",
+        "us" => "UnitedStates",
+        other => {
+            return Err(format!(
+                "{SETTINGS_FILE}: [clock] daylight_saving must be \"none\", \"europe\" or \"us\", not {other:?}"
+            ));
+        }
+    };
+    if clock.ntp_server.trim().is_empty() || clock.ntp_server.contains(['/', ':', ' ']) {
+        return Err(format!(
+            "{SETTINGS_FILE}: [clock] ntp_server must be a host name such as \"pool.ntp.org\", not {:?}",
+            clock.ntp_server
+        ));
+    }
+    writeln!(out, "pub mod clock {{").unwrap();
+    writeln!(out, "    pub const SHOW: bool = {};", clock.show).unwrap();
+    writeln!(out, "    pub const FORMAT: super::ClockFormat = super::ClockFormat::{format};").unwrap();
+    writeln!(out, "    pub const UTC_OFFSET_MINUTES: i32 = {};", clock.utc_offset_minutes).unwrap();
+    writeln!(out, "    pub const DAYLIGHT_SAVING: super::DaylightSaving = super::DaylightSaving::{daylight_saving};").unwrap();
+    writeln!(out, "    pub const NTP_SERVER: &str = {:?};", clock.ntp_server).unwrap();
     writeln!(out, "}}").unwrap();
 
     Ok(out)

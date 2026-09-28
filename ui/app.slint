@@ -3,7 +3,7 @@
 //
 // - the status page, until the first picture arrives;
 // - the tag menu, opened by tapping the screen, which also chooses whether
-//   each picture's phrase is written on it.
+//   each picture's phrase is written on it and whether the clock shows.
 //
 // The window takes the logical (rotated) screen size set by the platform
 // code, so everything is laid out relative to the window size.
@@ -119,6 +119,7 @@ component TagMenu inherits Rectangle {
     in property <string> wifi;
     in property <string> status;
     in-out property <bool> show-phrase;
+    in-out property <bool> show-clock;
     callback toggle-tag(int);
     callback show-all();
     callback done();
@@ -130,6 +131,8 @@ component TagMenu inherits Rectangle {
     property <length> chip-width: (root.width - 2 * Theme.pad - (root.columns - 1) * Theme.gap) / root.columns;
     // Rows taken by "All pictures" and the tags (or the loading message).
     property <int> tag-rows: floor((root.tags.length + root.columns) / root.columns) + (root.tags-loaded ? 0 : 1);
+    // Rows taken by the options below the tags.
+    property <int> option-rows: floor((2 + root.columns - 1) / root.columns);
     property <length> row-step: root.chip-height + Theme.gap;
 
     background: Theme.background;
@@ -176,7 +179,7 @@ component TagMenu inherits Rectangle {
         y: root.header;
         width: root.width;
         height: root.height - root.header - root.footer;
-        content-height: (root.tag-rows + 1) * root.row-step + Theme.gap;
+        content-height: (root.tag-rows + root.option-rows) * root.row-step + Theme.gap;
 
         Chip {
             x: Theme.pad;
@@ -225,6 +228,18 @@ component TagMenu inherits Rectangle {
                 root.show-phrase = !root.show-phrase;
             }
         }
+
+        Chip {
+            x: Theme.pad + Math.mod(1, root.columns) * (root.chip-width + Theme.gap);
+            y: (root.tag-rows + floor(1 / root.columns)) * root.row-step + Theme.gap;
+            width: root.chip-width;
+            height: root.chip-height;
+            text: "Show clock";
+            selected: root.show-clock;
+            clicked => {
+                root.show-clock = !root.show-clock;
+            }
+        }
     }
 
     // Footer: connection and fetcher status.
@@ -252,6 +267,7 @@ export component AppWindow inherits Window {
     in property <string> wifi;
     in property <string> status;
     in-out property <bool> show-phrase;
+    in-out property <bool> show-clock;
 
     callback open-menu();
     callback toggle-tag(int);
@@ -277,6 +293,7 @@ export component AppWindow inherits Window {
         wifi: root.wifi;
         status: root.status;
         show-phrase <=> root.show-phrase;
+        show-clock <=> root.show-clock;
         toggle-tag(i) => {
             root.toggle-tag(i);
         }

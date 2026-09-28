@@ -9,8 +9,9 @@ use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
+use embassy_time::Instant;
 
-use crate::config::slideshow;
+use crate::config::{clock, slideshow};
 use crate::picture::Picture;
 
 pub struct Shared {
@@ -21,6 +22,11 @@ pub struct Shared {
     pub generation: u32,
     /// Write each picture's phrase on it.
     pub show_phrase: bool,
+    /// Show the clock over the pictures.
+    pub show_clock: bool,
+    /// UTC in milliseconds since 1970 at an [`Instant`], from the time
+    /// server; `None` until it has answered (see [`crate::clock`]).
+    pub utc: Option<(Instant, u64)>,
     /// Every tag on the server; `None` until the list has been fetched.
     pub server_tags: Option<Vec<String>>,
     /// What the Wi-Fi is doing, for the status screen.
@@ -35,6 +41,8 @@ static SHARED: Mutex<CriticalSectionRawMutex, RefCell<Shared>> = Mutex::new(RefC
     selected_tags: Vec::new(),
     generation: 0,
     show_phrase: slideshow::SHOW_PHRASE,
+    show_clock: clock::SHOW,
+    utc: None,
     server_tags: None,
     wifi: String::new(),
     pictures: String::new(),

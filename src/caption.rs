@@ -1,6 +1,7 @@
-//! The picture's three-word phrase, drawn in the bottom-left corner of the
-//! screen on a dark panel (`[slideshow] show_phrase`, or "Show picture
-//! names" in the menu).
+//! Text on a dark panel in a bottom corner of the screen: the picture's
+//! three-word phrase on the left (`[slideshow] show_phrase`, or "Show
+//! picture names" in the menu) and the clock on the right (see
+//! [`crate::clock`]).
 //!
 //! Pictures are drawn without Slint, so the glyphs come from the UI font,
 //! pre-rendered by `build.rs`. Integer arithmetic only (see Cargo.toml).
@@ -25,29 +26,52 @@ mod font {
 }
 
 /// Space around the panel, and inside it around the text.
-const MARGIN: i32 = 16;
+pub const MARGIN: i32 = 16;
 const PAD_X: i32 = 14;
 const PAD_Y: i32 = 6;
 const RADIUS: i32 = 8;
 /// How much of the picture shows through the panel, out of 256.
 const PANEL_SHOW_THROUGH: u32 = 90;
 
+/// Which bottom corner the panel goes in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Corner {
+    Left,
+    Right,
+}
+
 fn glyph(c: char) -> &'static Glyph {
     let i = if (' '..='~').contains(&c) { c as usize - ' ' as usize } else { '?' as usize - ' ' as usize };
     &font::GLYPHS[i]
 }
 
-/// Draws `text` into a screenful of panel-order RGB565 pixels.
-pub fn draw(pixels: &mut [u16], text: &str) {
+/// How far the pen moves for `c`. Digits all take the width of the widest,
+/// so the clock doesn't shift sideways as it ticks.
+fn advance(c: char) -> i32 {
+    if c.is_ascii_digit() {
+        ('0'..='9').map(|d| glyph(d).advance as i32).max().unwrap_or(0)
+    } else {
+        glyph(c).advance as i32
+    }
+}
+
+/// The width of the panel for `text`, if it all fits.
+pub fn panel_width(text: &str) -> i32 {
+    text.chars().map(advance).sum::<i32>() + 2 * PAD_X
+}
+
+/// Draws `text` into a screenful of panel-order RGB565 pixels, in `corner`.
+/// The panel is at most `max_width` wide; text that doesn't fit is cut off.
+pub fn draw(pixels: &mut [u16], text: &str, corner: Corner, max_width: i32) {
     let (screen_width, screen_height) = logical_size();
     let (screen_width, screen_height) = (screen_width as i32, screen_height as i32);
 
-    // Lay out: as much of the text as fits across the screen.
-    let max_text = screen_width - 2 * (MARGIN + PAD_X);
+    // Lay out: as much of the text as fits.
+    let max_text = max_width.min(screen_width - 2 * MARGIN) - 2 * PAD_X;
     let mut text_width = 0;
     let mut chars = 0;
     for c in text.chars() {
-        let advance = glyph(c).advance as i32;
+        let advance = advance(c);
         if text_width + advance > max_text {
             break;
         }
@@ -57,7 +81,10 @@ pub fn draw(pixels: &mut [u16], text: &str) {
 
     let panel_width = text_width + 2 * PAD_X;
     let panel_height = font::LINE_HEIGHT + 2 * PAD_Y;
-    let left = MARGIN;
+    let left = match corner {
+        Corner::Left => MARGIN,
+        Corner::Right => screen_width - MARGIN - panel_width,
+    };
     let top = screen_height - MARGIN - panel_height;
 
     let mut set = |x: i32, y: i32, f: &dyn Fn(u16) -> u16| {
@@ -82,7 +109,8 @@ pub fn draw(pixels: &mut [u16], text: &str) {
     let mut pen = left + PAD_X;
     for c in text.chars().take(chars) {
         let g = glyph(c);
-        let x0 = pen + g.left as i32;
+        // Centred in its space, for digits wider than their glyph.
+        let x0 = pen + (advance(c) - g.advance as i32) / 2 + g.left as i32;
         let y0 = baseline - g.top as i32;
         for gy in 0..g.height as usize {
             for gx in 0..g.width as usize {
@@ -92,7 +120,7 @@ pub fn draw(pixels: &mut [u16], text: &str) {
                 }
             }
         }
-        pen += g.advance as i32;
+        pen += advance(c);
     }
 }
 

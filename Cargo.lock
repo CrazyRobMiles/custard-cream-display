@@ -838,6 +838,7 @@ dependencies = [
  "esp-radio",
  "esp-radio-rtos-driver",
  "esp-rtos",
+ "esp-storage",
  "fontdue",
  "log",
  "serde",

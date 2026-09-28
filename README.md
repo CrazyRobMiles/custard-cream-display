@@ -75,6 +75,11 @@ misspelt key, an unsupported display type or an odd rotation are build errors.
 |                | `tags`                 | `[]`                                | Tags to start with. Empty means every picture. |
 |                | `menu_timeout_seconds` | `60`                                | The tag menu closes after this long without a touch. |
 |                | `show_phrase`          | `false`                             | Write each picture's three-word phrase in the corner. "Show picture names" in the menu changes it on the frame. |
+| `[clock]`      | `show`                 | `false`                             | Show the time in the bottom-right corner. "Show clock" in the menu changes it on the frame. |
+|                | `format`               | `"24-hour"`                         | `"24-hour"` (14:05) or `"12-hour"` (2:05 pm). |
+|                | `utc_offset_minutes`   | `0`                                 | Local standard time in minutes ahead of UTC; negative for behind (for example `60` for central Europe, `-300` for US Eastern). |
+|                | `daylight_saving`      | `"none"`                            | `"europe"` (last Sunday in March to last Sunday in October), `"us"` (second Sunday in March to first Sunday in November) or `"none"`. |
+|                | `ntp_server`           | `"pool.ntp.org"`                    | Time server to set the clock from. |
 
 `build.rs` turns both files into constants in `$OUT_DIR/config.rs`, which
 [src/config.rs](src/config.rs) includes. The panel size is a constant, so
@@ -111,6 +116,17 @@ and how many steps each fade managed.
   - New tags appear in the menu as the server gets them.
   - The menu closes by itself after `menu_timeout_seconds` without a touch,
     keeping the old choice.
+- **Remembering choices:** when you tap **Done** after changing something,
+  the tags, "Show picture names" and "Show clock" are saved in flash, and the
+  frame starts with them next time instead of `tags`, `show_phrase` and
+  `[clock] show` from `settings.toml`. The screen blinks black while it
+  saves. Reflashing keeps the saved choices. To go back to the settings,
+  erase them (the `nvs` partition) with
+  `espflash erase-region --port COM4 0x9000 0x6000`.
+- **Picture names and the clock:** "Show picture names" and "Show clock",
+  below the tags in the menu, turn the phrase caption (bottom left) and the
+  clock (bottom right) on and off. The clock appears once the frame has
+  heard from the time server, a few seconds after it joins Wi-Fi.
 
 ## How it works
 
@@ -119,9 +135,11 @@ and how many steps each fade managed.
 | `network::wifi_task` | Joins Wi-Fi from `secrets.toml` and keeps it up; the embassy-net stack gets an address over DHCP. |
 | `fetcher::fetcher_task` | Keeps the next picture ready. It asks the server for a batch of random pictures with the chosen tags and downloads one. It starts each download only after the previous picture has faded in, so downloads never slow a fade. |
 | `fetcher::start_decoder` (thread) | Decodes the JPEG and fits it to the screen, which takes about 2 s for an 800×600 picture. It runs while the previous picture is showing, in a lowest-priority thread, so the display loop and touch carry on as normal. |
-| `frame::run` (main) | Runs the screen: pictures, transitions, touch and the Slint menus. |
+| `clock::sntp_task` | Sets the clock from `ntp_server` once the network is up, and again every 6 hours. |
+| `frame::run` (main) | Runs the screen: pictures, transitions, the clock, touch and the Slint menus. |
 
-The frame uses three endpoints on the server, none of which needs a login:
+The frame uses three endpoints on the server, none of which needs a login.
+It also asks `ntp_server` for the time over SNTP (UDP port 123).
 
 | Request                               | Used for                            |
 |---------------------------------------|-------------------------------------|
@@ -148,6 +166,12 @@ and fades can be:
     125 ms on the 800×480 panel, so a 1.5 s fade shows about 13 steps.
   - Steps are timed against the clock, so a slow step skips ahead rather than
     stretching the fade. The log reports how many steps each fade drew.
+- **Overlays:** the phrase caption is drawn into each picture when it is
+  prepared, so it fades with the picture. The clock is drawn onto the back
+  buffer after the picture (or each fade step), so it stays still during
+  fades; when the minute changes the picture is copied back and the new
+  time drawn over it. Both use Montserrat SemiBold, pre-rendered at 26 px
+  by `build.rs`, with digits spaced evenly so the clock doesn't jiggle.
 - **Scan-out:** the display uses the bounce-buffer scan-out and double
   buffering from `panel-demo`, described in its README. This is why pictures
   and fades never tear or lose sync.
@@ -169,14 +193,25 @@ framebuffers outside Slint.
 - **No HTTPS:** there is no TLS yet, so the server must answer on `http://`.
   The public custard cream server does, through Cloudflare. HTTPS would need
   `embedded-tls` or `esp-mbedtls`, plus certificate handling.
-- **Menu choices are forgotten at power-off:** the frame goes back to `tags`
-  and `show_phrase` from `settings.toml`. Saving it would need a small flash key-value store,
-  such as `sequential-storage` on `esp-storage`.
+- **Saving blinks the screen:** erasing flash stops the display refill for
+  about 40 ms, so the screen is blanked while the menu choices are saved
+  (see `src/store.rs`).
+- **Saved tags are limited to about 1 KB:** each tag takes its length plus
+  one byte, out of 1,006 bytes, which is about 125 short tags like `emf2026`.
+  A single tag can be at most 255 bytes, and at most 255 tags are saved. If
+  more are chosen, the frame uses them all until it is switched off, but
+  only the ones that fit are saved (the log says
+  `store: no room to save tag ...` for each one left out), so it comes back
+  with fewer after a restart. To allow more, raise `RECORD` in
+  `src/store.rs`; it can go up to a 4 KB flash sector.
 - **Fades are stepped:** at about 8 steps a second, a fade is visibly
   stepped rather than perfectly smooth (see [Pictures and fading](#pictures-and-fading)).
 - **`fill` and portrait pictures:** in `"fill"` mode the server's thumbnail
   is fitted inside a square the size of the screen's longer side. Portrait
   pictures on a landscape screen are therefore scaled up a little.
+- **Summer time rules:** only the European and US rules are built in. For
+  anywhere else, set `daylight_saving = "none"` and change
+  `utc_offset_minutes` when the clocks change.
 - **One display type:** other ESP32-S3 RGB boards need their own
   `[display] type`, which means a preset in `build.rs`, a `DisplayType`
   variant and bring-up code in `src/bin/main.rs`.
@@ -186,20 +221,23 @@ framebuffers outside Slint.
 | File                    | Purpose                                                    |
 |-------------------------|------------------------------------------------------------|
 | `secrets.example.toml`  | Template for `secrets.toml` (Wi-Fi credentials, not committed) |
-| `settings.toml`         | Server, display hardware and slideshow settings            |
+| `settings.toml`         | Server, display hardware, slideshow and clock settings     |
 | `build.rs`              | Checks both files and generates `config.rs`; compiles the UI |
 | `src/bin/main.rs`       | Start-up: PSRAM, heap, Wi-Fi, display, tasks               |
 | `src/config.rs`         | Types for the generated settings; rotation helpers         |
 | `src/frame.rs`          | Display loop: pictures, transitions, menus, touch          |
 | `src/picture.rs`        | JPEG decode, scaling, dithering, crossfade mixing          |
+| `src/caption.rs`        | Text panels in the bottom corners (phrase and clock)       |
+| `src/clock.rs`          | SNTP task, local time and summer time, clock text          |
 | `src/fetcher.rs`        | Fetcher task, and the decoder task                         |
 | `src/server.rs`         | The custard cream server's API                             |
 | `src/http.rs`           | Minimal HTTP/1.1 client                                    |
 | `src/network.rs`        | Wi-Fi connection and the network stack task                |
 | `src/state.rs`          | State shared between the tasks                             |
+| `src/store.rs`          | Saving the menu choices in flash                           |
 | `src/platform.rs`       | Slint platform: rendering, rotation, touch input           |
 | `src/hw/`               | Board wiring, framebuffer scan-out, CH422G, GT911          |
-| `ui/app.slint`          | Status page and tag menu                                   |
+| `ui/app.slint`          | Status page and menu (tags, picture names, clock)          |
 | `patches/i-slint-core`  | Slint 1.18.1 with a `no_std` fix (`f32::rem_euclid`)       |
 | `patches/esp-radio`     | esp-radio 1.0.0-beta.1 with a fix for a Wi-Fi TX stall     |
 

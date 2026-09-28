@@ -6,6 +6,7 @@
 extern crate alloc;
 
 pub mod caption;
+pub mod clock;
 pub mod config;
 pub mod fetcher;
 pub mod frame;
@@ -17,6 +18,7 @@ pub mod picture;
 pub mod platform;
 pub mod server;
 pub mod state;
+pub mod store;
 
 pub mod ui {
     slint::include_modules!();

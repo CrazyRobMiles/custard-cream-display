@@ -96,9 +96,15 @@ impl Picture {
         &self.pixels
     }
 
-    /// Writes `text` in the corner of the picture (see [`crate::caption`]).
-    pub fn draw_caption(&mut self, text: &str) {
-        crate::caption::draw(&mut self.pixels, text);
+    /// Writes `text` in the bottom-left corner of the picture (see
+    /// [`crate::caption`]), leaving room for the clock if it is showing.
+    pub fn draw_caption(&mut self, text: &str, clock_showing: bool) {
+        use crate::caption::{self, Corner, MARGIN};
+        let mut max_width = logical_size().0 as i32 - 2 * MARGIN;
+        if clock_showing {
+            max_width -= crate::clock::panel_width() + MARGIN;
+        }
+        caption::draw(&mut self.pixels, text, Corner::Left, max_width);
     }
 }
 

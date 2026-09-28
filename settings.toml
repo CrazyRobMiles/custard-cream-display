@@ -74,12 +74,37 @@ background = "#000000"
 dither = true
 
 # Tags to show when the frame starts. An empty list shows every picture.
-# Tags can be changed on the frame by tapping the screen.
+# Tags can be changed on the frame by tapping the screen; once they have
+# been, the frame remembers the choice and this setting no longer applies.
 tags = []
 
 # The tag menu closes by itself after this many seconds without a touch.
 menu_timeout_seconds = 60
 
 # Write each picture's three-word phrase in the bottom-left corner. This is
-# the setting at start-up; "Show picture names" in the menu changes it.
+# the setting at start-up until "Show picture names" in the menu changes it
+# (the frame remembers the change).
 show_phrase = false
+
+[clock]
+# Show the time in the bottom-right corner. This is the setting at start-up
+# until "Show clock" in the menu changes it (the frame remembers the change).
+# The frame gets the time from a time
+# server over the network, so the clock appears once it is online.
+show = false
+
+# "24-hour" (14:05) or "12-hour" (2:05 pm).
+format = "24-hour"
+
+# Local standard time, in minutes ahead of UTC (behind is negative): 0 for
+# the UK, 60 for central Europe, -300 for US Eastern, 330 for India.
+utc_offset_minutes = 0
+
+# When the clocks go forward an hour in summer:
+#   "europe"  last Sunday in March to last Sunday in October (EU and UK)
+#   "us"      second Sunday in March to first Sunday in November (US and Canada)
+#   "none"    never
+daylight_saving = "europe"
+
+# The time server to ask (SNTP, UDP port 123).
+ntp_server = "pool.ntp.org"

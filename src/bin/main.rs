@@ -20,7 +20,8 @@ use custard_cream_display::hw::ch422g::Ch422g;
 use custard_cream_display::hw::framebuffer::{self, FrameBuffer};
 use custard_cream_display::hw::{I2cBus, display};
 use custard_cream_display::ui::AppWindow;
-use custard_cream_display::{fetcher, frame, heap, network, platform, state};
+use custard_cream_display::store::Store;
+use custard_cream_display::{clock, fetcher, frame, heap, network, platform, state};
 use embassy_executor::Spawner;
 use embassy_net::StackResources;
 use embassy_time::{Duration, Timer};
@@ -104,7 +105,8 @@ async fn main(spawner: Spawner) -> ! {
         let rng = Rng::new();
         (rng.random() as u64) << 32 | rng.random() as u64
     };
-    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
+    // Sockets: DHCP, DNS, the fetcher's TCP and the clock's UDP.
+    static RESOURCES: StaticCell<StackResources<4>> = StaticCell::new();
     let (stack, runner) = embassy_net::new(
         station,
         embassy_net::Config::dhcpv4(Default::default()),
@@ -119,10 +121,23 @@ async fn main(spawner: Spawner) -> ! {
         heap::free_psram() / 1024
     );
 
-    state::select_tags(slideshow::TAGS.iter().map(|&t| String::from(t)).collect());
+    // Start with the menu choices saved last time, or else the settings.
+    let mut store = Store::new(peripherals.FLASH);
+    match store.load() {
+        Some(choices) => {
+            info!("Saved choices: {choices:?}");
+            state::with(|s| {
+                s.show_phrase = choices.show_phrase;
+                s.show_clock = choices.show_clock;
+            });
+            state::select_tags(choices.tags);
+        }
+        None => state::select_tags(slideshow::TAGS.iter().map(|&t| String::from(t)).collect()),
+    }
     spawner.spawn(network::net_task(runner).unwrap());
     spawner.spawn(network::wifi_task(wifi, stack).unwrap());
     spawner.spawn(fetcher::fetcher_task(stack).unwrap());
+    spawner.spawn(clock::sntp_task(stack).unwrap());
     fetcher::start_decoder();
 
     // Display hardware. Only one type so far; a new board adds its own
@@ -207,5 +222,5 @@ async fn main(spawner: Spawner) -> ! {
     watchdog.set_stage_action(MwdtStage::Stage0, MwdtStageAction::ResetSystem);
     watchdog.enable();
 
-    frame::run(&app, &window, &mut transfer, i2c, || watchdog.feed()).await
+    frame::run(&app, &window, &mut transfer, i2c, store, || watchdog.feed()).await
 }
